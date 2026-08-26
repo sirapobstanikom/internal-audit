@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f3f5f8;
+  --foreground: #1e293b;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sarabun);
+}
+
+html {
+  font-family: var(--font-sans), Sarabun, "Noto Sans Thai", sans-serif;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: white;
+  }
+}
