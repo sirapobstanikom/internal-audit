@@ -1,13 +1,7 @@
-import { mkdir, unlink, writeFile } from "fs/promises";
-import path from "path";
 import { NextRequest, NextResponse } from "next/server";
 import { jsonError, requireAdmin, requireSession } from "@/lib/auth";
 import { getPlan, supabase } from "@/lib/db";
-import { UPLOAD_DIR } from "@/lib/uploads";
-
-async function ensureUploadDir() {
-  await mkdir(UPLOAD_DIR, { recursive: true });
-}
+import { deletePlanPdf, uploadPlanPdf } from "@/lib/uploads";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -47,16 +41,12 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
         if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
           return NextResponse.json({ error: "รองรับเฉพาะไฟล์ PDF" }, { status: 400 });
         }
-        await ensureUploadDir();
         const storedName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.pdf`;
-        await writeFile(
-          path.join(UPLOAD_DIR, storedName),
-          Buffer.from(await file.arrayBuffer()),
-        );
+        await uploadPlanPdf(storedName, new Uint8Array(await file.arrayBuffer()));
         data.fileName = file.name;
         data.storedName = storedName;
         data.sizeBytes = file.size;
-        await unlink(path.join(UPLOAD_DIR, existing.storedName)).catch(() => undefined);
+        await deletePlanPdf(existing.storedName);
       }
     } else {
       const body = (await request.json()) as { title?: string };
@@ -89,7 +79,7 @@ export async function DELETE(_request: NextRequest, { params }: Ctx) {
     }
     const { error } = await supabase().from("audit_plans").delete().eq("id", id);
     if (error) throw new Error(error.message);
-    await unlink(path.join(UPLOAD_DIR, existing.storedName)).catch(() => undefined);
+    await deletePlanPdf(existing.storedName);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return jsonError(error);

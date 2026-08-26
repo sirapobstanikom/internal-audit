@@ -1,9 +1,7 @@
-import { readFile } from "fs/promises";
-import path from "path";
 import { NextResponse } from "next/server";
 import { jsonError, requireSession } from "@/lib/auth";
 import { getPlan } from "@/lib/db";
-import { UPLOAD_DIR } from "@/lib/uploads";
+import { downloadPlanPdf } from "@/lib/uploads";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -15,9 +13,8 @@ export async function GET(_request: Request, { params }: Ctx) {
     if (!plan) {
       return NextResponse.json({ error: "ไม่พบไฟล์แผนตรวจ" }, { status: 404 });
     }
-    const filePath = path.join(UPLOAD_DIR, plan.storedName);
-    const data = await readFile(filePath);
-    return new NextResponse(new Uint8Array(data), {
+    const data = await downloadPlanPdf(plan.storedName);
+    return new NextResponse(data, {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": `inline; filename="${encodeURIComponent(plan.fileName)}"`,

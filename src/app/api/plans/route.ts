@@ -1,13 +1,7 @@
-import { mkdir, writeFile } from "fs/promises";
-import path from "path";
 import { NextRequest, NextResponse } from "next/server";
 import { jsonError, requireSession } from "@/lib/auth";
 import { listPlans, newId, supabase } from "@/lib/db";
-import { UPLOAD_DIR } from "@/lib/uploads";
-
-async function ensureUploadDir() {
-  await mkdir(UPLOAD_DIR, { recursive: true });
-}
+import { uploadPlanPdf } from "@/lib/uploads";
 
 function sanitizeFileName(name: string) {
   return name.replace(/[^\w.\-ก-๙\s()]/g, "_").slice(0, 120);
@@ -40,9 +34,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "ไฟล์ต้องไม่เกิน 20 MB" }, { status: 400 });
     }
 
-    await ensureUploadDir();
     const storedName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.pdf`;
-    await writeFile(path.join(UPLOAD_DIR, storedName), Buffer.from(await file.arrayBuffer()));
+    await uploadPlanPdf(storedName, new Uint8Array(await file.arrayBuffer()));
 
     const now = new Date().toISOString();
     const { data: plan, error } = await supabase()
