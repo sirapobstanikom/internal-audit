@@ -34,7 +34,7 @@ yarn-error.log*
 .env*
 !.env.example
 
-# sqlite + uploads
+# local sqlite leftovers + uploads
 /prisma/*.db
 /prisma/*.db-journal
 /uploads

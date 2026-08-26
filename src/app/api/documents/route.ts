@@ -54,10 +54,10 @@ export async function GET(request: NextRequest) {
         ...(q
           ? {
               OR: [
-                { documentNo: { contains: q } },
-                { auditorName: { contains: q } },
-                { department: { name: { contains: q } } },
-                { department: { code: { contains: q } } },
+                { documentNo: { contains: q, mode: "insensitive" } },
+                { auditorName: { contains: q, mode: "insensitive" } },
+                { department: { name: { contains: q, mode: "insensitive" } } },
+                { department: { code: { contains: q, mode: "insensitive" } } },
               ],
             }
           : {}),

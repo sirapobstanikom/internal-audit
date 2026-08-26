@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 enum Role {
@@ -45,6 +46,8 @@ model User {
   createdAt    DateTime        @default(now())
   plans        AuditPlan[]
   documents    AuditDocument[]
+
+  @@map("users")
 }
 
 model AuditPlan {
@@ -57,6 +60,9 @@ model AuditPlan {
   uploadedBy   User     @relation(fields: [uploadedById], references: [id])
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  @@index([uploadedById])
+  @@map("audit_plans")
 }
 
 model Department {
@@ -67,6 +73,9 @@ model Department {
   sortOrder Int             @default(0)
   createdAt DateTime        @default(now())
   documents AuditDocument[]
+
+  @@unique([branch, code])
+  @@map("departments")
 }
 
 model AuditDocument {
@@ -87,6 +96,11 @@ model AuditDocument {
   updatedAt           DateTime        @updatedAt
   submittedAt         DateTime?
   checklist           ChecklistItem[]
+
+  @@index([status])
+  @@index([departmentId])
+  @@index([createdById])
+  @@map("audit_documents")
 }
 
 model ChecklistItem {
@@ -97,4 +111,7 @@ model ChecklistItem {
   evidence   String        @default("")
   result     CheckResult   @default(CONFORM)
   sortOrder  Int           @default(0)
+
+  @@index([documentId])
+  @@map("checklist_items")
 }

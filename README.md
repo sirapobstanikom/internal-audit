@@ -2,7 +2,15 @@
 
 เว็บแอปสำหรับทีมตรวจประเมินภายใน ใช้เก็บแผนตรวจ PDF, ดูโครงสร้างสาขา, กรอกแบบฟอร์มพร้อม checklist และติดตามสถานะเอกสารจนปิดงาน
 
+ฐานข้อมูลใช้ **Supabase (PostgreSQL)** ผ่าน Prisma
+
 ## เริ่มต้นใช้งาน
+
+1. สร้างโปรเจกต์ที่ [Supabase](https://supabase.com/dashboard)
+2. ไปที่ **Project Settings → Database → Connection string**
+   - `DATABASE_URL` ใช้โหมด **Transaction pooler** (พอร์ต `6543`) แล้วต่อท้าย `?pgbouncer=true`
+   - `DIRECT_URL` ใช้โหมด **Session** (พอร์ต `5432`) สำหรับ `prisma db push` / migrate
+3. คัดลอก `.env.example` เป็น `.env` แล้วใส่รหัสผ่านและ Project ref
 
 ```bash
 npm install
@@ -12,6 +20,8 @@ npm run dev
 ```
 
 เปิด [http://localhost:3000](http://localhost:3000)
+
+ตารางจะไปอยู่ใน schema `public` ของ Supabase เช่น `users`, `departments`, `audit_documents`, `audit_plans`, `checklist_items`
 
 ### บัญชีทดลอง
 
