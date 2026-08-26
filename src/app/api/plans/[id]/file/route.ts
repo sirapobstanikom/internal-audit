@@ -1,8 +1,8 @@
 import { readFile } from "fs/promises";
 import path from "path";
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { jsonError, requireSession } from "@/lib/auth";
+import { getPlan } from "@/lib/db";
 import { UPLOAD_DIR } from "@/lib/uploads";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -11,7 +11,7 @@ export async function GET(_request: Request, { params }: Ctx) {
   try {
     await requireSession();
     const { id } = await params;
-    const plan = await prisma.auditPlan.findUnique({ where: { id } });
+    const plan = await getPlan(id);
     if (!plan) {
       return NextResponse.json({ error: "ไม่พบไฟล์แผนตรวจ" }, { status: 404 });
     }

@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { jsonError, requireAdmin, requireSession } from "@/lib/auth";
 import { BRANCHES, type Branch } from "@/lib/constants";
+import { listDepartments, newId, supabase } from "@/lib/db";
 
 export async function GET() {
   try {
     await requireSession();
-    const departments = await prisma.department.findMany({
-      orderBy: [{ branch: "asc" }, { sortOrder: "asc" }, { name: "asc" }],
-    });
+    const departments = await listDepartments();
     return NextResponse.json({ departments });
   } catch (error) {
     return jsonError(error);
@@ -34,19 +32,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const last = await prisma.department.findFirst({
-      where: { branch },
-      orderBy: { sortOrder: "desc" },
-    });
+    const { data: last, error: lastError } = await supabase()
+      .from("departments")
+      .select("sortOrder")
+      .eq("branch", branch)
+      .order("sortOrder", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (lastError) throw new Error(lastError.message);
 
-    const department = await prisma.department.create({
-      data: {
+    const { data: department, error } = await supabase()
+      .from("departments")
+      .insert({
+        id: newId(),
         name,
         code,
         branch,
         sortOrder: (last?.sortOrder ?? 0) + 1,
-      },
-    });
+      })
+      .select("*")
+      .single();
+    if (error) throw new Error(error.message);
+
     return NextResponse.json({ department }, { status: 201 });
   } catch (error) {
     return jsonError(error);

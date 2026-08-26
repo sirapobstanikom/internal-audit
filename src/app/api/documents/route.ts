@@ -1,70 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { CheckResult, DocStatus } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
 import { jsonError, requireSession } from "@/lib/auth";
-import { CHECK_RESULTS, STATUSES } from "@/lib/constants";
-
-const documentInclude = {
-  department: true,
-  createdBy: { select: { name: true, username: true } },
-  checklist: { orderBy: { sortOrder: "asc" as const } },
-};
-
-async function nextDocumentNo() {
-  const year = new Date().getFullYear();
-  const prefix = `IA-${year}-`;
-  const last = await prisma.auditDocument.findFirst({
-    where: { documentNo: { startsWith: prefix } },
-    orderBy: { documentNo: "desc" },
-  });
-  const next = last ? Number(last.documentNo.slice(prefix.length)) + 1 : 1;
-  return `${prefix}${String(next).padStart(4, "0")}`;
-}
-
-function parseChecklist(raw: unknown) {
-  if (!Array.isArray(raw)) return [];
-  return raw.map((item, index) => {
-    const row = item as {
-      question?: string;
-      evidence?: string;
-      result?: CheckResult;
-    };
-    const result = CHECK_RESULTS.includes(row.result as CheckResult)
-      ? (row.result as CheckResult)
-      : "CONFORM";
-    return {
-      question: String(row.question ?? "").trim(),
-      evidence: String(row.evidence ?? "").trim(),
-      result,
-      sortOrder: index + 1,
-    };
-  });
-}
+import { STATUSES, type DocStatus } from "@/lib/constants";
+import {
+  getDepartment,
+  getDocument,
+  listDocuments,
+  newId,
+  nextDocumentNo,
+  parseChecklist,
+  supabase,
+} from "@/lib/db";
 
 export async function GET(request: NextRequest) {
   try {
     await requireSession();
     const { searchParams } = request.nextUrl;
-    const q = searchParams.get("q")?.trim() ?? "";
+    const q = searchParams.get("q")?.trim().toLowerCase() ?? "";
     const status = searchParams.get("status") as DocStatus | null;
 
-    const documents = await prisma.auditDocument.findMany({
-      where: {
-        ...(status && STATUSES.includes(status) ? { status } : {}),
-        ...(q
-          ? {
-              OR: [
-                { documentNo: { contains: q, mode: "insensitive" } },
-                { auditorName: { contains: q, mode: "insensitive" } },
-                { department: { name: { contains: q, mode: "insensitive" } } },
-                { department: { code: { contains: q, mode: "insensitive" } } },
-              ],
-            }
-          : {}),
-      },
-      include: documentInclude,
-      orderBy: { createdAt: "desc" },
-    });
+    let documents = await listDocuments();
+    if (status && STATUSES.includes(status)) {
+      documents = documents.filter((doc) => doc.status === status);
+    }
+    if (q) {
+      documents = documents.filter((doc) => {
+        const hay = `${doc.documentNo} ${doc.auditorName} ${doc.department.name} ${doc.department.code}`.toLowerCase();
+        return hay.includes(q);
+      });
+    }
 
     return NextResponse.json({ documents });
   } catch (error) {
@@ -87,9 +50,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const department = await prisma.department.findUnique({
-      where: { id: departmentId },
-    });
+    const department = await getDepartment(departmentId);
     if (!department) {
       return NextResponse.json({ error: "ไม่พบแผนกที่เลือก" }, { status: 400 });
     }
@@ -102,26 +63,40 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const document = await prisma.auditDocument.create({
-      data: {
+    const now = new Date().toISOString();
+    const id = newId();
+    const { error } = await supabase()
+      .from("audit_documents")
+      .insert({
+        id,
         documentNo: await nextDocumentNo(),
         auditorName,
         departmentId,
-        standards: JSON.stringify(
-          Array.isArray(body.standards) ? body.standards : [],
-        ),
+        standards: JSON.stringify(Array.isArray(body.standards) ? body.standards : []),
         nonconformitySource: String(body.nonconformitySource ?? ""),
         dueDate: String(body.dueDate ?? ""),
         status: submit ? "PENDING_ACK" : "DRAFT",
         auditorSignName: String(body.auditorSignName ?? "").trim(),
         auditeeSignName: String(body.auditeeSignName ?? "").trim(),
         createdById: session.userId,
-        submittedAt: submit ? new Date() : null,
-        checklist: { create: checklist },
-      },
-      include: documentInclude,
-    });
+        createdAt: now,
+        updatedAt: now,
+        submittedAt: submit ? now : null,
+      });
+    if (error) throw new Error(error.message);
 
+    if (checklist.length > 0) {
+      const { error: checkError } = await supabase().from("checklist_items").insert(
+        checklist.map((item) => ({
+          id: newId(),
+          documentId: id,
+          ...item,
+        })),
+      );
+      if (checkError) throw new Error(checkError.message);
+    }
+
+    const document = await getDocument(id);
     return NextResponse.json({ document }, { status: 201 });
   } catch (error) {
     return jsonError(error);

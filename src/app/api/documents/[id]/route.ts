@@ -1,45 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { CheckResult, DocStatus } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
 import { jsonError, requireAdmin, requireSession } from "@/lib/auth";
-import { CHECK_RESULTS, STATUSES } from "@/lib/constants";
-
-const documentInclude = {
-  department: true,
-  createdBy: { select: { name: true, username: true } },
-  checklist: { orderBy: { sortOrder: "asc" as const } },
-};
+import { STATUSES, type DocStatus } from "@/lib/constants";
+import { getDocument, newId, parseChecklist, supabase } from "@/lib/db";
 
 type Ctx = { params: Promise<{ id: string }> };
-
-function parseChecklist(raw: unknown) {
-  if (!Array.isArray(raw)) return [];
-  return raw.map((item, index) => {
-    const row = item as {
-      question?: string;
-      evidence?: string;
-      result?: CheckResult;
-    };
-    const result = CHECK_RESULTS.includes(row.result as CheckResult)
-      ? (row.result as CheckResult)
-      : "CONFORM";
-    return {
-      question: String(row.question ?? "").trim(),
-      evidence: String(row.evidence ?? "").trim(),
-      result,
-      sortOrder: index + 1,
-    };
-  });
-}
 
 export async function GET(_request: NextRequest, { params }: Ctx) {
   try {
     await requireSession();
     const { id } = await params;
-    const document = await prisma.auditDocument.findUnique({
-      where: { id },
-      include: documentInclude,
-    });
+    const document = await getDocument(id);
     if (!document) {
       return NextResponse.json({ error: "ไม่พบเอกสาร" }, { status: 404 });
     }
@@ -53,7 +23,7 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
   try {
     const session = await requireSession();
     const { id } = await params;
-    const existing = await prisma.auditDocument.findUnique({ where: { id } });
+    const existing = await getDocument(id);
     if (!existing) {
       return NextResponse.json({ error: "ไม่พบเอกสาร" }, { status: 404 });
     }
@@ -76,17 +46,9 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
       );
     }
 
-    const data: {
-      auditorName?: string;
-      departmentId?: string;
-      standards?: string;
-      nonconformitySource?: string;
-      dueDate?: string;
-      status?: DocStatus;
-      auditorSignName?: string;
-      auditeeSignName?: string;
-      submittedAt?: Date | null;
-    } = {};
+    const data: Record<string, string | null> = {
+      updatedAt: new Date().toISOString(),
+    };
 
     if (typeof body.auditorName === "string") data.auditorName = body.auditorName.trim();
     if (typeof body.departmentId === "string") data.departmentId = body.departmentId;
@@ -104,7 +66,7 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
 
     if (submit) {
       data.status = "PENDING_ACK";
-      data.submittedAt = existing.submittedAt ?? new Date();
+      data.submittedAt = existing.submittedAt ?? new Date().toISOString();
     } else if (isAdmin && typeof body.status === "string" && STATUSES.includes(body.status as DocStatus)) {
       data.status = body.status as DocStatus;
       if (body.status === "DRAFT") data.submittedAt = null;
@@ -118,22 +80,28 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
       );
     }
 
-    const document = await prisma.$transaction(async (tx) => {
-      if (body.checklist) {
-        await tx.checklistItem.deleteMany({ where: { documentId: id } });
-        if (checklist.length > 0) {
-          await tx.checklistItem.createMany({
-            data: checklist.map((item) => ({ ...item, documentId: id })),
-          });
-        }
+    if (body.checklist) {
+      const { error: delError } = await supabase()
+        .from("checklist_items")
+        .delete()
+        .eq("documentId", id);
+      if (delError) throw new Error(delError.message);
+      if (checklist.length > 0) {
+        const { error: insError } = await supabase().from("checklist_items").insert(
+          checklist.map((item) => ({
+            id: newId(),
+            documentId: id,
+            ...item,
+          })),
+        );
+        if (insError) throw new Error(insError.message);
       }
-      return tx.auditDocument.update({
-        where: { id },
-        data,
-        include: documentInclude,
-      });
-    });
+    }
 
+    const { error } = await supabase().from("audit_documents").update(data).eq("id", id);
+    if (error) throw new Error(error.message);
+
+    const document = await getDocument(id);
     return NextResponse.json({ document });
   } catch (error) {
     return jsonError(error);
@@ -144,7 +112,13 @@ export async function DELETE(_request: NextRequest, { params }: Ctx) {
   try {
     await requireAdmin();
     const { id } = await params;
-    await prisma.auditDocument.delete({ where: { id } });
+    const { error: itemsError } = await supabase()
+      .from("checklist_items")
+      .delete()
+      .eq("documentId", id);
+    if (itemsError) throw new Error(itemsError.message);
+    const { error } = await supabase().from("audit_documents").delete().eq("id", id);
+    if (error) throw new Error(error.message);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return jsonError(error);

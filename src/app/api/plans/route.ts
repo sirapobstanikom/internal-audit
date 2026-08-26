@@ -1,8 +1,8 @@
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { jsonError, requireSession } from "@/lib/auth";
+import { listPlans, newId, supabase } from "@/lib/db";
 import { UPLOAD_DIR } from "@/lib/uploads";
 
 async function ensureUploadDir() {
@@ -16,10 +16,7 @@ function sanitizeFileName(name: string) {
 export async function GET() {
   try {
     await requireSession();
-    const plans = await prisma.auditPlan.findMany({
-      include: { uploadedBy: { select: { name: true, username: true } } },
-      orderBy: { createdAt: "desc" },
-    });
+    const plans = await listPlans();
     return NextResponse.json({ plans });
   } catch (error) {
     return jsonError(error);
@@ -45,19 +42,24 @@ export async function POST(request: NextRequest) {
 
     await ensureUploadDir();
     const storedName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.pdf`;
-    const buffer = Buffer.from(await file.arrayBuffer());
-    await writeFile(path.join(UPLOAD_DIR, storedName), buffer);
+    await writeFile(path.join(UPLOAD_DIR, storedName), Buffer.from(await file.arrayBuffer()));
 
-    const plan = await prisma.auditPlan.create({
-      data: {
+    const now = new Date().toISOString();
+    const { data: plan, error } = await supabase()
+      .from("audit_plans")
+      .insert({
+        id: newId(),
         title: title || sanitizeFileName(file.name.replace(/\.pdf$/i, "")),
         fileName: file.name,
         storedName,
         sizeBytes: file.size,
         uploadedById: session.userId,
-      },
-      include: { uploadedBy: { select: { name: true, username: true } } },
-    });
+        createdAt: now,
+        updatedAt: now,
+      })
+      .select("*, uploadedBy:users!uploadedById(name, username)")
+      .single();
+    if (error) throw new Error(error.message);
 
     return NextResponse.json({ plan }, { status: 201 });
   } catch (error) {

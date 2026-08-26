@@ -1,10 +1,9 @@
-import { unlink, writeFile } from "fs/promises";
+import { mkdir, unlink, writeFile } from "fs/promises";
 import path from "path";
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { jsonError, requireAdmin, requireSession } from "@/lib/auth";
+import { getPlan, supabase } from "@/lib/db";
 import { UPLOAD_DIR } from "@/lib/uploads";
-import { mkdir } from "fs/promises";
 
 async function ensureUploadDir() {
   await mkdir(UPLOAD_DIR, { recursive: true });
@@ -16,10 +15,7 @@ export async function GET(_request: NextRequest, { params }: Ctx) {
   try {
     await requireSession();
     const { id } = await params;
-    const plan = await prisma.auditPlan.findUnique({
-      where: { id },
-      include: { uploadedBy: { select: { name: true, username: true } } },
-    });
+    const plan = await getPlan(id);
     if (!plan) {
       return NextResponse.json({ error: "ไม่พบไฟล์แผนตรวจ" }, { status: 404 });
     }
@@ -33,18 +29,18 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
   try {
     await requireAdmin();
     const { id } = await params;
-    const existing = await prisma.auditPlan.findUnique({ where: { id } });
+    const existing = await getPlan(id);
     if (!existing) {
       return NextResponse.json({ error: "ไม่พบไฟล์แผนตรวจ" }, { status: 404 });
     }
 
     const contentType = request.headers.get("content-type") ?? "";
+    const data: Record<string, string | number> = { updatedAt: new Date().toISOString() };
+
     if (contentType.includes("multipart/form-data")) {
       const form = await request.formData();
       const title = String(form.get("title") ?? "").trim();
       const file = form.get("file");
-      const data: { title?: string; fileName?: string; storedName?: string; sizeBytes?: number } =
-        {};
       if (title) data.title = title;
 
       if (file instanceof File && file.size > 0) {
@@ -62,24 +58,21 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
         data.sizeBytes = file.size;
         await unlink(path.join(UPLOAD_DIR, existing.storedName)).catch(() => undefined);
       }
-
-      const plan = await prisma.auditPlan.update({
-        where: { id },
-        data,
-        include: { uploadedBy: { select: { name: true, username: true } } },
-      });
-      return NextResponse.json({ plan });
+    } else {
+      const body = (await request.json()) as { title?: string };
+      if (!body.title?.trim()) {
+        return NextResponse.json({ error: "กรุณาระบุชื่อไฟล์" }, { status: 400 });
+      }
+      data.title = body.title.trim();
     }
 
-    const body = (await request.json()) as { title?: string };
-    if (!body.title?.trim()) {
-      return NextResponse.json({ error: "กรุณาระบุชื่อไฟล์" }, { status: 400 });
-    }
-    const plan = await prisma.auditPlan.update({
-      where: { id },
-      data: { title: body.title.trim() },
-      include: { uploadedBy: { select: { name: true, username: true } } },
-    });
+    const { data: plan, error } = await supabase()
+      .from("audit_plans")
+      .update(data)
+      .eq("id", id)
+      .select("*, uploadedBy:users!uploadedById(name, username)")
+      .single();
+    if (error) throw new Error(error.message);
     return NextResponse.json({ plan });
   } catch (error) {
     return jsonError(error);
@@ -90,11 +83,12 @@ export async function DELETE(_request: NextRequest, { params }: Ctx) {
   try {
     await requireAdmin();
     const { id } = await params;
-    const existing = await prisma.auditPlan.findUnique({ where: { id } });
+    const existing = await getPlan(id);
     if (!existing) {
       return NextResponse.json({ error: "ไม่พบไฟล์แผนตรวจ" }, { status: 404 });
     }
-    await prisma.auditPlan.delete({ where: { id } });
+    const { error } = await supabase().from("audit_plans").delete().eq("id", id);
+    if (error) throw new Error(error.message);
     await unlink(path.join(UPLOAD_DIR, existing.storedName)).catch(() => undefined);
     return NextResponse.json({ ok: true });
   } catch (error) {

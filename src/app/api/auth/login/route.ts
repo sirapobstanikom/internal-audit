@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { prisma } from "@/lib/prisma";
+import { getUserByUsername } from "@/lib/db";
 import { SESSION_COOKIE, signToken } from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const user = await prisma.user.findUnique({ where: { username } });
+  const user = await getUserByUsername(username);
   if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
     return NextResponse.json(
       { error: "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง" },

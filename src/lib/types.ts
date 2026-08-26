@@ -12,6 +12,7 @@ export type AuditPlan = {
   id: string;
   title: string;
   fileName: string;
+  storedName: string;
   sizeBytes: number;
   createdAt: string;
   updatedAt: string;
