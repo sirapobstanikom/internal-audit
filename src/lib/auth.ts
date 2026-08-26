@@ -82,5 +82,6 @@ export function jsonError(error: unknown) {
     return Response.json({ error: error.message }, { status: error.status });
   }
   console.error(error);
-  return Response.json({ error: "เกิดข้อผิดพลาดภายในระบบ" }, { status: 500 });
+  const message = error instanceof Error ? error.message : "เกิดข้อผิดพลาดภายในระบบ";
+  return Response.json({ error: message }, { status: 500 });
 }

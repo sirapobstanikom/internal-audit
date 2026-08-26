@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { getUserByUsername } from "@/lib/db";
-import { SESSION_COOKIE, signToken } from "@/lib/auth";
+import { jsonError, SESSION_COOKIE, signToken } from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
   let body: { username?: string; password?: string };
@@ -20,37 +20,41 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const user = await getUserByUsername(username);
-  if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
-    return NextResponse.json(
-      { error: "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง" },
-      { status: 401 },
-    );
-  }
+  try {
+    const user = await getUserByUsername(username);
+    if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+      return NextResponse.json(
+        { error: "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง" },
+        { status: 401 },
+      );
+    }
 
-  const token = await signToken({
-    userId: user.id,
-    username: user.username,
-    name: user.name,
-    role: user.role,
-  });
-
-  const response = NextResponse.json({
-    user: {
+    const token = await signToken({
       userId: user.id,
       username: user.username,
       name: user.name,
       role: user.role,
-    },
-  });
+    });
 
-  response.cookies.set(SESSION_COOKIE, token, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 7,
-  });
+    const response = NextResponse.json({
+      user: {
+        userId: user.id,
+        username: user.username,
+        name: user.name,
+        role: user.role,
+      },
+    });
 
-  return response;
+    response.cookies.set(SESSION_COOKIE, token, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 7,
+    });
+
+    return response;
+  } catch (error) {
+    return jsonError(error);
+  }
 }

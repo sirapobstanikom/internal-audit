@@ -6,11 +6,15 @@ import type { AuditDocument, AuditPlan, Department } from "@/lib/types";
 
 let cached: SupabaseClient | null = null;
 
+function env(name: string) {
+  return (process.env[name] ?? "").trim().replace(/^["']|["']$/g, "");
+}
+
 export function supabase() {
   if (cached) return cached;
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) {
+  const url = env("SUPABASE_URL");
+  const key = env("SUPABASE_SERVICE_ROLE_KEY");
+  if (!url || !key || url.includes("YOUR_PROJECT") || key.includes("your-service-role-key")) {
     throw new Error("ยังไม่ได้ตั้งค่า SUPABASE_URL หรือ SUPABASE_SERVICE_ROLE_KEY");
   }
   cached = createClient(url, key, {
