@@ -7,6 +7,11 @@ import { useUser } from "@/components/AppShell";
 import { StatusBadge } from "@/components/StatusBadge";
 import { api } from "@/lib/api";
 import {
+  getChecklistQuestions,
+  getChecklistSectionTitle,
+  isTemplateQuestion,
+} from "@/lib/checklists";
+import {
   CHECK_RESULTS,
   RESULT_LABELS,
   SOURCE_OPTIONS,
@@ -119,17 +124,67 @@ export function AuditForm({
     };
   }, [departments]);
 
+  const groupedChecklist = useMemo(() => {
+    const groups: Array<{
+      title: string;
+      items: Array<{ item: FormState["checklist"][number]; index: number }>;
+    }> = [];
+
+    form.checklist.forEach((item, index) => {
+      const title = getChecklistSectionTitle(item.question) ?? "";
+      const last = groups[groups.length - 1];
+      if (last && last.title === title) {
+        last.items.push({ item, index });
+        return;
+      }
+      groups.push({ title, items: [{ item, index }] });
+    });
+
+    return groups;
+  }, [form.checklist]);
+
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
   function toggleStandard(id: string) {
-    update(
-      "standards",
-      form.standards.includes(id)
-        ? form.standards.filter((item) => item !== id)
-        : [...form.standards, id],
-    );
+    setForm((prev) => {
+      const adding = !prev.standards.includes(id);
+      const nextStandards = adding
+        ? [...prev.standards, id]
+        : prev.standards.filter((item) => item !== id);
+      const templateQuestions = getChecklistQuestions(id);
+      if (templateQuestions.length === 0) {
+        return { ...prev, standards: nextStandards };
+      }
+
+      const templateSet = new Set(templateQuestions);
+      if (adding) {
+        const existingQuestions = new Set(prev.checklist.map((item) => item.question));
+        const kept = prev.checklist.filter(
+          (item) => item.question.trim() !== "" || item.evidence.trim() !== "",
+        );
+        const toAdd = templateQuestions
+          .filter((question) => !existingQuestions.has(question))
+          .map((question) => ({
+            question,
+            evidence: "",
+            result: "CONFORM" as const,
+          }));
+        return {
+          ...prev,
+          standards: nextStandards,
+          checklist: [...kept, ...toAdd],
+        };
+      }
+
+      const remaining = prev.checklist.filter((item) => !templateSet.has(item.question));
+      return {
+        ...prev,
+        standards: nextStandards,
+        checklist: remaining.length > 0 ? remaining : [emptyItem()],
+      };
+    });
   }
 
   function updateItem(index: number, patch: Partial<FormState["checklist"][number]>) {
@@ -338,68 +393,94 @@ export function AuditForm({
             </button>
           ) : null}
         </div>
-        <div className="space-y-4">
-          {form.checklist.map((item, index) => (
-            <div
-              key={index}
-              className="rounded-xl border border-slate-200 bg-slate-50/60 p-4"
-            >
-              <div className="mb-3 flex items-center justify-between">
-                <p className="text-sm font-semibold text-slate-700">ข้อที่ {index + 1}</p>
-                {canEdit && form.checklist.length > 1 ? (
-                  <button
-                    type="button"
-                    className="text-rose-600 hover:text-rose-800"
-                    onClick={() =>
-                      update(
-                        "checklist",
-                        form.checklist.filter((_, i) => i !== index),
-                      )
-                    }
+        <div className="space-y-5">
+          {groupedChecklist.map((group, groupIndex) => (
+            <div key={`${group.title}-${groupIndex}`} className="space-y-3">
+              {group.title ? (
+                <h3 className="rounded-lg bg-teal-50 px-3 py-2 text-sm font-semibold text-teal-900">
+                  {group.title}
+                </h3>
+              ) : null}
+              {group.items.map(({ item, index }) => {
+                const fromTemplate = isTemplateQuestion(item.question);
+                return (
+                  <div
+                    key={`${item.question}-${index}`}
+                    className="rounded-xl border border-slate-200 bg-slate-50/60 p-4"
                   >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                ) : null}
-              </div>
-              <div className="grid gap-3">
-                <div>
-                  <label className={labelClass}>คำถาม / ข้อกำหนด</label>
-                  <textarea
-                    rows={2}
-                    className={inputClass}
-                    disabled={!canEdit}
-                    value={item.question}
-                    onChange={(e) => updateItem(index, { question: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>หลักฐาน</label>
-                  <textarea
-                    rows={2}
-                    className={inputClass}
-                    disabled={!canEdit}
-                    value={item.evidence}
-                    onChange={(e) => updateItem(index, { evidence: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>ผลการตรวจ</label>
-                  <select
-                    className={inputClass}
-                    disabled={!canEdit}
-                    value={item.result}
-                    onChange={(e) =>
-                      updateItem(index, { result: e.target.value as CheckResult })
-                    }
-                  >
-                    {CHECK_RESULTS.map((result) => (
-                      <option key={result} value={result}>
-                        {RESULT_LABELS[result]}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <p className="text-sm font-semibold text-slate-700">
+                        ข้อที่ {index + 1}
+                      </p>
+                      {canEdit && form.checklist.length > 1 ? (
+                        <button
+                          type="button"
+                          className="text-rose-600 hover:text-rose-800"
+                          onClick={() =>
+                            update(
+                              "checklist",
+                              form.checklist.filter((_, i) => i !== index),
+                            )
+                          }
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      ) : null}
+                    </div>
+                    <div className="grid gap-3">
+                      <div>
+                        <label className={labelClass}>คำถาม / ข้อกำหนด</label>
+                        {fromTemplate ? (
+                          <p className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800">
+                            {item.question}
+                          </p>
+                        ) : (
+                          <textarea
+                            rows={2}
+                            className={inputClass}
+                            disabled={!canEdit}
+                            value={item.question}
+                            onChange={(e) =>
+                              updateItem(index, { question: e.target.value })
+                            }
+                          />
+                        )}
+                      </div>
+                      <div>
+                        <label className={labelClass}>หลักฐาน</label>
+                        <textarea
+                          rows={2}
+                          className={inputClass}
+                          disabled={!canEdit}
+                          value={item.evidence}
+                          onChange={(e) =>
+                            updateItem(index, { evidence: e.target.value })
+                          }
+                        />
+                      </div>
+                      <div>
+                        <label className={labelClass}>ผลการตรวจ</label>
+                        <select
+                          className={inputClass}
+                          disabled={!canEdit}
+                          value={item.result}
+                          onChange={(e) =>
+                            updateItem(index, {
+                              result: e.target.value as CheckResult,
+                            })
+                          }
+                        >
+                          {CHECK_RESULTS.map((result) => (
+                            <option key={result} value={result}>
+                              {RESULT_LABELS[result]}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           ))}
         </div>
