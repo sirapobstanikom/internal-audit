@@ -429,25 +429,46 @@ export function AuditForm({
                     </div>
                     <div className="grid gap-3">
                       <div>
-                        <label className={labelClass}>คำถาม / ข้อกำหนด</label>
                         {fromTemplate ? (
-                          <p className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800">
-                            {item.question}
-                          </p>
+                          <div className="space-y-2">
+                            <div>
+                              <label className={labelClass}>ข้อกำหนด</label>
+                              <p className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800">
+                                {item.question}
+                              </p>
+                            </div>
+
+                            <div>
+                              <label className={labelClass}>คำถาม (ให้ user พิม)</label>
+                              <textarea
+                                rows={2}
+                                className={inputClass}
+                                disabled={!canEdit}
+                                value={item.question}
+                                onChange={(e) =>
+                                  updateItem(index, { question: e.target.value })
+                                }
+                              />
+                            </div>
+                          </div>
                         ) : (
-                          <textarea
-                            rows={2}
-                            className={inputClass}
-                            disabled={!canEdit}
-                            value={item.question}
-                            onChange={(e) =>
-                              updateItem(index, { question: e.target.value })
-                            }
-                          />
+                          <>
+                            <label className={labelClass}>คำถาม / ข้อกำหนด</label>
+                            <textarea
+                              rows={2}
+                              className={inputClass}
+                              disabled={!canEdit}
+                              value={item.question}
+                              onChange={(e) =>
+                                updateItem(index, { question: e.target.value })
+                              }
+                            />
+                          </>
                         )}
                       </div>
+
                       <div>
-                        <label className={labelClass}>หลักฐาน</label>
+                        <label className={labelClass}>หลักฐานแนบไฟล์</label>
                         <textarea
                           rows={2}
                           className={inputClass}
