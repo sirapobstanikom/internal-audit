@@ -102,7 +102,7 @@ export default function LoginPage() {
           </div>
           <h2 className="hidden text-2xl font-semibold text-slate-900 lg:block">เข้าสู่ระบบ</h2>
           <p className="mt-1 mb-6 text-sm text-slate-500">
-            ต้องล็อกอินก่อนใช้งาน มี 2 สิทธิ์: Admin และ User
+            ต้องล็อกอินก่อนใช้งาน มี 3 สิทธิ์: Admin, Leader Audit และ User
           </p>
           <Suspense>
             <LoginForm />
@@ -112,6 +112,10 @@ export default function LoginPage() {
             <p>
               Admin: <code className="text-teal-800">admin</code> /{" "}
               <code className="text-teal-800">admin123</code>
+            </p>
+            <p>
+              Leader Audit: <code className="text-teal-800">leader</code> /{" "}
+              <code className="text-teal-800">leader123</code>
             </p>
             <p>
               User: <code className="text-teal-800">user</code> /{" "}

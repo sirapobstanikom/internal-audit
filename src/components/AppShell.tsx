@@ -2,6 +2,7 @@
 
 import {
   Building2,
+  CheckCircle2,
   ClipboardList,
   FileText,
   FolderOpen,
@@ -15,6 +16,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, useContext, useMemo, useState } from "react";
 import type { SessionUser } from "@/lib/auth";
+import { ROLE_LABELS, type Role } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 const UserContext = createContext<SessionUser | null>(null);
@@ -25,11 +27,24 @@ export function useUser() {
   return user;
 }
 
-const NAV = [
+type NavItem = {
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  roles?: Role[];
+};
+
+const NAV: NavItem[] = [
   { href: "/", label: "หน้าหลัก", icon: LayoutDashboard },
   { href: "/plans", label: "แผนการตรวจประเมิน", icon: FileText },
   { href: "/organization", label: "ผังองค์กร & โครงสร้างสาขา", icon: Building2 },
   { href: "/forms", label: "แบบฟอร์มตรวจประเมิน", icon: ClipboardList },
+  {
+    href: "/acknowledge",
+    label: "รับทราบ/เอกสาร",
+    icon: CheckCircle2,
+    roles: ["LEADER_AUDIT"],
+  },
   { href: "/documents", label: "รายการเอกสารทั้งหมด", icon: FolderOpen },
 ];
 
@@ -38,6 +53,7 @@ const TITLES: Record<string, string> = {
   "/plans": "แผนการตรวจประเมิน",
   "/organization": "ผังองค์กร & โครงสร้างสาขา",
   "/forms": "แบบฟอร์มตรวจประเมิน",
+  "/acknowledge": "รับทราบ/เอกสาร",
   "/documents": "รายการเอกสารทั้งหมด",
 };
 
@@ -46,6 +62,12 @@ function pageTitle(pathname: string) {
   if (pathname.startsWith("/forms/")) return "แก้ไขเอกสารตรวจประเมิน";
   if (pathname.startsWith("/documents/")) return "รายละเอียดเอกสาร";
   return "ระบบตรวจประเมินภายใน";
+}
+
+function roleBadgeClass(role: Role) {
+  if (role === "ADMIN") return "bg-amber-400/15 text-amber-200";
+  if (role === "LEADER_AUDIT") return "bg-sky-400/15 text-sky-200";
+  return "bg-teal-400/15 text-teal-200";
 }
 
 export function AppShell({
@@ -59,6 +81,10 @@ export function AppShell({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const title = useMemo(() => pageTitle(pathname), [pathname]);
+  const navItems = useMemo(
+    () => NAV.filter((item) => !item.roles || item.roles.includes(user.role)),
+    [user.role],
+  );
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -80,7 +106,7 @@ export function AppShell({
         </div>
       </div>
       <nav className="flex-1 space-y-1 px-3">
-        {NAV.map((item) => {
+        {navItems.map((item) => {
           const active =
             item.href === "/"
               ? pathname === "/"
@@ -110,12 +136,10 @@ export function AppShell({
         <span
           className={cn(
             "mt-3 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold",
-            user.role === "ADMIN"
-              ? "bg-amber-400/15 text-amber-200"
-              : "bg-teal-400/15 text-teal-200",
+            roleBadgeClass(user.role),
           )}
         >
-          {user.role === "ADMIN" ? "ผู้ดูแลระบบ (Admin)" : "ผู้ใช้งาน (User)"}
+          {ROLE_LABELS[user.role]}
         </span>
         <button
           type="button"

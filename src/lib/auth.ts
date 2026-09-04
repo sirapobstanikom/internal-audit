@@ -1,8 +1,10 @@
 import { SignJWT, jwtVerify, type JWTPayload } from "jose";
 import { cookies } from "next/headers";
 import type { Role } from "./constants";
+import { ROLE_LABELS } from "./constants";
 
 export const SESSION_COOKIE = "ia_session";
+export const ROLES = Object.keys(ROLE_LABELS) as Role[];
 
 export type SessionUser = {
   userId: string;
@@ -31,7 +33,7 @@ export async function verifyToken(token: string): Promise<SessionUser | null> {
       typeof payload.userId !== "string" ||
       typeof payload.username !== "string" ||
       typeof payload.name !== "string" ||
-      (payload.role !== "ADMIN" && payload.role !== "USER")
+      !ROLES.includes(payload.role as Role)
     ) {
       return null;
     }
@@ -39,7 +41,7 @@ export async function verifyToken(token: string): Promise<SessionUser | null> {
       userId: payload.userId,
       username: payload.username,
       name: payload.name,
-      role: payload.role,
+      role: payload.role as Role,
     };
   } catch {
     return null;
@@ -65,6 +67,14 @@ export async function requireAdmin(): Promise<SessionUser> {
   const session = await requireSession();
   if (session.role !== "ADMIN") {
     throw new AuthError("เฉพาะผู้ดูแลระบบเท่านั้น", 403);
+  }
+  return session;
+}
+
+export async function requireLeaderAudit(): Promise<SessionUser> {
+  const session = await requireSession();
+  if (session.role !== "LEADER_AUDIT" && session.role !== "ADMIN") {
+    throw new AuthError("เฉพาะหัวหน้าผู้ตรวจเท่านั้น", 403);
   }
   return session;
 }

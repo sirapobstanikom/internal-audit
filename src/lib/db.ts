@@ -93,7 +93,7 @@ export async function getUserByUsername(username: string) {
     username: string;
     passwordHash: string;
     name: string;
-    role: "ADMIN" | "USER";
+    role: "ADMIN" | "USER" | "LEADER_AUDIT";
   } | null;
 }
 

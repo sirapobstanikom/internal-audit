@@ -1,9 +1,10 @@
 "use client";
 
-import { Plus, Save, Send, Trash2 } from "lucide-react";
+import { CheckCircle2, Plus, RotateCcw, Save, Send, Trash2, XCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useUser } from "@/components/AppShell";
+import { Modal } from "@/components/Modal";
 import { StatusBadge } from "@/components/StatusBadge";
 import { api } from "@/lib/api";
 import {
@@ -12,6 +13,7 @@ import {
   isTemplateQuestion,
 } from "@/lib/checklists";
 import {
+  LEADER_REVIEW_STATUSES,
   CHECK_RESULTS,
   RESULT_LABELS,
   SOURCE_OPTIONS,
@@ -21,7 +23,7 @@ import {
   type CheckResult,
   type DocStatus,
 } from "@/lib/constants";
-import { btnPrimary, btnSecondary, cardClass, inputClass, labelClass } from "@/lib/styles";
+import { btnDanger, btnPrimary, btnSecondary, cardClass, inputClass, labelClass } from "@/lib/styles";
 import type { AuditDocument, ChecklistItem, Department } from "@/lib/types";
 import { cn, parseStandards } from "@/lib/utils";
 
@@ -54,7 +56,9 @@ export function AuditForm({
   const [existing, setExisting] = useState<AuditDocument | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<"draft" | "submit" | null>(null);
+  const [reviewing, setReviewing] = useState<"approve" | "reject" | "return" | null>(null);
   const [message, setMessage] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const [submitPopup, setSubmitPopup] = useState(false);
   const [form, setForm] = useState<FormState>({
     auditorName: user.name,
     departmentId: presetDepartmentId ?? "",
@@ -115,6 +119,13 @@ export function AuditForm({
 
   const canEdit = user.role === "ADMIN" || !existing || existing.status === "DRAFT";
   const canChangeStatus = user.role === "ADMIN" && Boolean(existing);
+  const canLeaderReview =
+    user.role === "LEADER_AUDIT" &&
+    Boolean(existing) &&
+    LEADER_REVIEW_STATUSES.includes(form.status);
+
+  // ตอนรอพิจารณา ไม่โชว์ปุ่มบันทึกร่าง/ส่ง
+  const showSaveActions = canEdit && (!canLeaderReview || form.status === "DRAFT");
 
   const groupedDepts = useMemo(() => {
     return {
@@ -216,10 +227,11 @@ export function AuditForm({
           });
       setExisting(res.document);
       setForm((prev) => ({ ...prev, status: res.document.status }));
-      setMessage({
-        type: "ok",
-        text: submit ? "ส่งเอกสารเรียบร้อย" : "บันทึกร่างเรียบร้อย",
-      });
+      if (submit) {
+        setSubmitPopup(true);
+      } else {
+        setMessage({ type: "ok", text: "บันทึกร่างเรียบร้อย" });
+      }
       if (!documentId) {
         router.replace(`/forms/${res.document.id}`);
       }
@@ -233,12 +245,66 @@ export function AuditForm({
     }
   }
 
+  async function review(action: "approve" | "reject" | "return") {
+    if (!existing) return;
+    setMessage(null);
+    setReviewing(action);
+    try {
+      const res = await api<{ document: AuditDocument }>(
+        `/api/documents/${existing.id}/review`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action }),
+        },
+      );
+      setExisting(res.document);
+      setForm((prev) => ({ ...prev, status: res.document.status }));
+      const texts = {
+        approve: "อนุมัติผ่านเรียบร้อย ปิดเอกสารสมบูรณ์",
+        reject: "บันทึกผลไม่ผ่านเรียบร้อย",
+        return: "ตีกลับเป็นร่างแล้ว ผู้ตรวจแก้ไขได้ใหม่",
+      } as const;
+      setMessage({ type: "ok", text: texts[action] });
+    } catch (error) {
+      setMessage({
+        type: "err",
+        text: error instanceof Error ? error.message : "ดำเนินการไม่สำเร็จ",
+      });
+    } finally {
+      setReviewing(null);
+    }
+  }
+
   if (loading) {
     return <div className="text-sm text-slate-500">กำลังโหลดแบบฟอร์ม...</div>;
   }
 
   return (
     <div className="space-y-6">
+      <Modal
+        open={submitPopup}
+        title="ส่งเอกสารสำเร็จ"
+        onClose={() => setSubmitPopup(false)}
+      >
+        <div className="flex flex-col items-center py-4 text-center">
+          <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+            <CheckCircle2 className="h-8 w-8" />
+          </div>
+          <p className="text-lg font-semibold text-slate-900">ส่งเอกสารเรียบร้อย</p>
+          <p className="mt-2 text-sm text-slate-500">
+            เอกสารถูกส่งไปรอ Leader Audit พิจารณาแล้ว
+          </p>
+          <button
+            type="button"
+            className={`${btnPrimary} mt-6 min-w-32`}
+            onClick={() => setSubmitPopup(false)}
+          >
+            ตกลง
+          </button>
+        </div>
+      </Modal>
+
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-sm text-slate-500">
@@ -537,7 +603,46 @@ export function AuditForm({
         </div>
       </section>
 
-      {canEdit ? (
+      {canLeaderReview ? (
+        <section className={cn(cardClass, "border-sky-200 bg-sky-50/40 p-6")}>
+          <h2 className="text-base font-semibold text-slate-900">การพิจารณาของ Leader Audit</h2>
+          <p className="mt-1 text-sm text-slate-600">
+            เอกสารนี้ประเมินเสร็จแล้ว ({STATUS_LABELS[form.status]}) — เลือกอนุมัติผ่าน ไม่ผ่าน
+            หรือตีกลับให้ผู้ตรวจแก้ไข
+          </p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <button
+              type="button"
+              className={btnPrimary}
+              disabled={Boolean(reviewing)}
+              onClick={() => review("approve")}
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              {reviewing === "approve" ? "กำลังอนุมัติ..." : "อนุมัติผ่าน"}
+            </button>
+            <button
+              type="button"
+              className={btnDanger}
+              disabled={Boolean(reviewing)}
+              onClick={() => review("reject")}
+            >
+              <XCircle className="h-4 w-4" />
+              {reviewing === "reject" ? "กำลังบันทึก..." : "ไม่ผ่าน"}
+            </button>
+            <button
+              type="button"
+              className={btnSecondary}
+              disabled={Boolean(reviewing)}
+              onClick={() => review("return")}
+            >
+              <RotateCcw className="h-4 w-4" />
+              {reviewing === "return" ? "กำลังตีกลับ..." : "ตีกลับ"}
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      {canEdit && showSaveActions ? (
         <div className="sticky bottom-4 flex flex-wrap justify-end gap-3 rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-lg backdrop-blur">
           <button
             type="button"

@@ -1,4 +1,4 @@
-export type Role = "ADMIN" | "USER";
+export type Role = "ADMIN" | "USER" | "LEADER_AUDIT";
 export type Branch = "HO" | "BP" | "LB";
 export type DocStatus =
   | "DRAFT"
@@ -10,13 +10,19 @@ export type DocStatus =
   | "CLOSED";
 export type CheckResult = "CONFORM" | "CAR_MAJOR" | "CAR_MINOR" | "PAR" | "NA";
 
+export const ROLE_LABELS: Record<Role, string> = {
+  ADMIN: "ผู้ดูแลระบบ (Admin)",
+  USER: "ผู้ใช้งาน (User)",
+  LEADER_AUDIT: "หัวหน้าผู้ตรวจ (Leader Audit)",
+};
+
 export const STATUS_LABELS: Record<DocStatus, string> = {
   DRAFT: "ร่าง",
   PENDING_ACK: "รอรับทราบ",
   PENDING_CORRECTIVE_APPROVAL: "รออนุมัติการแก้ไข",
   ATTACHED_PENDING: "แนบเรื่องรอดำเนินการ",
-  WITHDRAWN: "ถอนแบบ",
-  PENDING_MR: "รอ MR อนุมัติ",
+  WITHDRAWN: "ไม่ผ่าน",
+  PENDING_MR: "รอ Leader อนุมัติ",
   CLOSED: "ปิดเอกสารสมบูรณ์",
 };
 
@@ -29,6 +35,9 @@ export const STATUS_COLORS: Record<DocStatus, string> = {
   PENDING_MR: "bg-violet-50 text-violet-800 ring-violet-200",
   CLOSED: "bg-emerald-50 text-emerald-800 ring-emerald-200",
 };
+
+/** สถานะที่ Leader Audit อนุมัติ/ไม่ผ่าน/ตีกลับได้หลังประเมินเสร็จ */
+export const LEADER_REVIEW_STATUSES: DocStatus[] = ["PENDING_ACK", "PENDING_MR"];
 
 export const RESULT_LABELS: Record<CheckResult, string> = {
   CONFORM: "สอดคล้อง",
