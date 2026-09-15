@@ -2,13 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { jsonError, requireSession } from "@/lib/auth";
 import { STATUSES, type DocStatus } from "@/lib/constants";
 import {
+  createDocument,
   getDepartment,
-  getDocument,
   listDocuments,
-  newId,
-  nextDocumentNo,
   parseChecklist,
-  supabase,
 } from "@/lib/db";
 
 export async function GET(request: NextRequest) {
@@ -64,39 +61,20 @@ export async function POST(request: NextRequest) {
     }
 
     const now = new Date().toISOString();
-    const id = newId();
-    const { error } = await supabase()
-      .from("audit_documents")
-      .insert({
-        id,
-        documentNo: await nextDocumentNo(),
-        auditorName,
-        departmentId,
-        standards: JSON.stringify(Array.isArray(body.standards) ? body.standards : []),
-        nonconformitySource: String(body.nonconformitySource ?? ""),
-        dueDate: String(body.dueDate ?? ""),
-        status: submit ? "PENDING_ACK" : "DRAFT",
-        auditorSignName: String(body.auditorSignName ?? "").trim(),
-        auditeeSignName: String(body.auditeeSignName ?? "").trim(),
-        createdById: session.userId,
-        createdAt: now,
-        updatedAt: now,
-        submittedAt: submit ? now : null,
-      });
-    if (error) throw new Error(error.message);
+    const document = await createDocument({
+      auditorName,
+      departmentId,
+      standards: Array.isArray(body.standards) ? (body.standards as string[]) : [],
+      nonconformitySource: String(body.nonconformitySource ?? ""),
+      dueDate: String(body.dueDate ?? ""),
+      status: submit ? "PENDING_ACK" : "DRAFT",
+      auditorSignName: String(body.auditorSignName ?? "").trim(),
+      auditeeSignName: String(body.auditeeSignName ?? "").trim(),
+      createdById: session.userId,
+      submittedAt: submit ? now : null,
+      checklist,
+    });
 
-    if (checklist.length > 0) {
-      const { error: checkError } = await supabase().from("checklist_items").insert(
-        checklist.map((item) => ({
-          id: newId(),
-          documentId: id,
-          ...item,
-        })),
-      );
-      if (checkError) throw new Error(checkError.message);
-    }
-
-    const document = await getDocument(id);
     return NextResponse.json({ document }, { status: 201 });
   } catch (error) {
     return jsonError(error);

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonError, requireAdmin, requireSession } from "@/lib/auth";
-import { getPlan, supabase } from "@/lib/db";
+import { deletePlan, getPlan, updatePlan } from "@/lib/db";
 import { deletePlanPdf, uploadPlanPdf } from "@/lib/uploads";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -29,7 +29,7 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
     }
 
     const contentType = request.headers.get("content-type") ?? "";
-    const data: Record<string, string | number> = { updatedAt: new Date().toISOString() };
+    const data: Record<string, string | number> = {};
 
     if (contentType.includes("multipart/form-data")) {
       const form = await request.formData();
@@ -56,13 +56,7 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
       data.title = body.title.trim();
     }
 
-    const { data: plan, error } = await supabase()
-      .from("audit_plans")
-      .update(data)
-      .eq("id", id)
-      .select("*, uploadedBy:users!uploadedById(name, username)")
-      .single();
-    if (error) throw new Error(error.message);
+    const plan = await updatePlan(id, data);
     return NextResponse.json({ plan });
   } catch (error) {
     return jsonError(error);
@@ -77,8 +71,7 @@ export async function DELETE(_request: NextRequest, { params }: Ctx) {
     if (!existing) {
       return NextResponse.json({ error: "ไม่พบไฟล์แผนตรวจ" }, { status: 404 });
     }
-    const { error } = await supabase().from("audit_plans").delete().eq("id", id);
-    if (error) throw new Error(error.message);
+    await deletePlan(id);
     await deletePlanPdf(existing.storedName);
     return NextResponse.json({ ok: true });
   } catch (error) {

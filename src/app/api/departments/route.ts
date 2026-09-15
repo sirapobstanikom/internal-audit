@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonError, requireAdmin, requireSession } from "@/lib/auth";
 import { BRANCHES, type Branch } from "@/lib/constants";
-import { listDepartments, newId, supabase } from "@/lib/db";
+import { createDepartment, listDepartments } from "@/lib/db";
 
 export async function GET() {
   try {
@@ -32,28 +32,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { data: last, error: lastError } = await supabase()
-      .from("departments")
-      .select("sortOrder")
-      .eq("branch", branch)
-      .order("sortOrder", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (lastError) throw new Error(lastError.message);
-
-    const { data: department, error } = await supabase()
-      .from("departments")
-      .insert({
-        id: newId(),
-        name,
-        code,
-        branch,
-        sortOrder: (last?.sortOrder ?? 0) + 1,
-      })
-      .select("*")
-      .single();
-    if (error) throw new Error(error.message);
-
+    const department = await createDepartment({ name, code, branch });
     return NextResponse.json({ department }, { status: 201 });
   } catch (error) {
     return jsonError(error);

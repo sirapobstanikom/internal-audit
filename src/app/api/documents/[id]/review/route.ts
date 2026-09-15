@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonError, requireSession } from "@/lib/auth";
 import { LEADER_REVIEW_STATUSES, type DocStatus } from "@/lib/constants";
-import { getDocument, supabase } from "@/lib/db";
+import { getDocument, updateDocument } from "@/lib/db";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -42,19 +42,14 @@ export async function POST(request: NextRequest, { params }: Ctx) {
       );
     }
 
-    const nextStatus = ACTION_STATUS[action];
-    const data: Record<string, string | null> = {
-      status: nextStatus,
-      updatedAt: new Date().toISOString(),
+    const patch: Parameters<typeof updateDocument>[1] = {
+      status: ACTION_STATUS[action],
     };
     if (action === "return") {
-      data.submittedAt = null;
+      patch.submittedAt = null;
     }
 
-    const { error } = await supabase().from("audit_documents").update(data).eq("id", id);
-    if (error) throw new Error(error.message);
-
-    const document = await getDocument(id);
+    const document = await updateDocument(id, patch);
     return NextResponse.json({ document });
   } catch (error) {
     return jsonError(error);

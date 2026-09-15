@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonError, requireSession } from "@/lib/auth";
-import { listPlans, newId, supabase } from "@/lib/db";
+import { createPlan, listPlans } from "@/lib/db";
 import { uploadPlanPdf } from "@/lib/uploads";
 
 function sanitizeFileName(name: string) {
@@ -37,22 +37,13 @@ export async function POST(request: NextRequest) {
     const storedName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.pdf`;
     await uploadPlanPdf(storedName, new Uint8Array(await file.arrayBuffer()));
 
-    const now = new Date().toISOString();
-    const { data: plan, error } = await supabase()
-      .from("audit_plans")
-      .insert({
-        id: newId(),
-        title: title || sanitizeFileName(file.name.replace(/\.pdf$/i, "")),
-        fileName: file.name,
-        storedName,
-        sizeBytes: file.size,
-        uploadedById: session.userId,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .select("*, uploadedBy:users!uploadedById(name, username)")
-      .single();
-    if (error) throw new Error(error.message);
+    const plan = await createPlan({
+      title: title || sanitizeFileName(file.name.replace(/\.pdf$/i, "")),
+      fileName: file.name,
+      storedName,
+      sizeBytes: file.size,
+      uploadedById: session.userId,
+    });
 
     return NextResponse.json({ plan }, { status: 201 });
   } catch (error) {

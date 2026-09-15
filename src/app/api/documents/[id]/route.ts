@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonError, requireAdmin, requireSession } from "@/lib/auth";
 import { STATUSES, type DocStatus } from "@/lib/constants";
-import { getDocument, newId, parseChecklist, supabase } from "@/lib/db";
+import { deleteDocument, getDocument, parseChecklist, updateDocument } from "@/lib/db";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -46,30 +46,32 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
       );
     }
 
-    const data: Record<string, string | null> = {
-      updatedAt: new Date().toISOString(),
-    };
+    const patch: Parameters<typeof updateDocument>[1] = {};
 
-    if (typeof body.auditorName === "string") data.auditorName = body.auditorName.trim();
-    if (typeof body.departmentId === "string") data.departmentId = body.departmentId;
-    if (Array.isArray(body.standards)) data.standards = JSON.stringify(body.standards);
+    if (typeof body.auditorName === "string") patch.auditorName = body.auditorName.trim();
+    if (typeof body.departmentId === "string") patch.departmentId = body.departmentId;
+    if (Array.isArray(body.standards)) patch.standards = JSON.stringify(body.standards);
     if (typeof body.nonconformitySource === "string") {
-      data.nonconformitySource = body.nonconformitySource;
+      patch.nonconformitySource = body.nonconformitySource;
     }
-    if (typeof body.dueDate === "string") data.dueDate = body.dueDate;
+    if (typeof body.dueDate === "string") patch.dueDate = body.dueDate;
     if (typeof body.auditorSignName === "string") {
-      data.auditorSignName = body.auditorSignName.trim();
+      patch.auditorSignName = body.auditorSignName.trim();
     }
     if (typeof body.auditeeSignName === "string") {
-      data.auditeeSignName = body.auditeeSignName.trim();
+      patch.auditeeSignName = body.auditeeSignName.trim();
     }
 
     if (submit) {
-      data.status = "PENDING_ACK";
-      data.submittedAt = existing.submittedAt ?? new Date().toISOString();
-    } else if (isAdmin && typeof body.status === "string" && STATUSES.includes(body.status as DocStatus)) {
-      data.status = body.status as DocStatus;
-      if (body.status === "DRAFT") data.submittedAt = null;
+      patch.status = "PENDING_ACK";
+      patch.submittedAt = existing.submittedAt ?? new Date().toISOString();
+    } else if (
+      isAdmin &&
+      typeof body.status === "string" &&
+      STATUSES.includes(body.status as DocStatus)
+    ) {
+      patch.status = body.status as DocStatus;
+      if (body.status === "DRAFT") patch.submittedAt = null;
     }
 
     const checklist = parseChecklist(body.checklist).filter((item) => item.question);
@@ -79,29 +81,11 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
         { status: 400 },
       );
     }
-
     if (body.checklist) {
-      const { error: delError } = await supabase()
-        .from("checklist_items")
-        .delete()
-        .eq("documentId", id);
-      if (delError) throw new Error(delError.message);
-      if (checklist.length > 0) {
-        const { error: insError } = await supabase().from("checklist_items").insert(
-          checklist.map((item) => ({
-            id: newId(),
-            documentId: id,
-            ...item,
-          })),
-        );
-        if (insError) throw new Error(insError.message);
-      }
+      patch.checklist = checklist;
     }
 
-    const { error } = await supabase().from("audit_documents").update(data).eq("id", id);
-    if (error) throw new Error(error.message);
-
-    const document = await getDocument(id);
+    const document = await updateDocument(id, patch);
     return NextResponse.json({ document });
   } catch (error) {
     return jsonError(error);
@@ -112,13 +96,7 @@ export async function DELETE(_request: NextRequest, { params }: Ctx) {
   try {
     await requireAdmin();
     const { id } = await params;
-    const { error: itemsError } = await supabase()
-      .from("checklist_items")
-      .delete()
-      .eq("documentId", id);
-    if (itemsError) throw new Error(itemsError.message);
-    const { error } = await supabase().from("audit_documents").delete().eq("id", id);
-    if (error) throw new Error(error.message);
+    await deleteDocument(id);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return jsonError(error);
